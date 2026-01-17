@@ -198,6 +198,7 @@
                                     <th class="p-3 w-1/6">Alt-Version</th>
                                     <th class="p-3 w-1/6">Neu-Version</th>
                                     <th class="p-3">Revisionsgrund</th>
+                                    <th class="p-3">Rel. Notes</th>
                                     <th class="p-3 text-center">Updated</th>
                                     <th class="p-3 w-8"></th>
                                 </tr>
@@ -236,6 +237,7 @@
                                     <th class="p-3 w-1/6">Tag (Alt)</th>
                                     <th class="p-3 w-1/6">Tag (Neu)</th>
                                     <th class="p-3">Breaking Changes / Migration</th>
+                                    <th class="p-3">Rel. Notes</th>
                                     <th class="p-3 text-center">Updated</th>
                                     <th class="p-3 w-8"></th>
                                 </tr>
@@ -325,9 +327,9 @@
                                 <h2 class="text-2xl font-bold text-slate-800">5. Abschluss & Dokumentation</h2>
                                 <p class="text-slate-500 mt-1">Zusammenfassung des Patchdays.</p>
                             </div>
-                            <button onclick="window.print()"
-                                class="bg-slate-800 text-white px-4 py-2 rounded text-sm hover:bg-slate-700">🖨️ Drucken
-                                / PDF</button>
+                            <button onclick="window.open('/api/report/pdf', '_blank')"
+                                class="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 font-bold flex items-center gap-2"><i
+                                    class="ph ph-file-pdf"></i> PDF Exportieren</button>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -462,6 +464,7 @@
                     html += `<td class="p-3">${createInput('old', 'Alt', 'text-xs')}</td>`;
                     html += `<td class="p-3">${createInput('new', 'Neu', 'text-xs')}</td>`;
                     html += `<td class="p-3">${createInput('reason', 'Grund', 'text-xs')}</td>`;
+                    html += `<td class="p-3">${createInput('rel_notes', 'URL/Ref', 'text-xs')}</td>`;
                 }
                 else if (key.startsWith('qa')) {
                     html += `<td class="p-3 font-medium">${createInput('name', 'Name')}</td>`;
@@ -515,11 +518,20 @@
         function addRow(key) {
             const empty = {
                 backup: { id: Date.now(), label: 'Neu', method: '', ref: '', done: false },
-                host: { id: Date.now(), name: 'Neu', old: '', new: '', reason: '', done: false },
-                docker: { id: Date.now(), name: 'Neu', old: '', new: '', reason: '', done: false },
+                host: { id: Date.now(), name: 'Neu', old: '', new: '', reason: '', rel_notes: '', done: false },
+                docker: { id: Date.now(), name: 'Neu', old: '', new: '', reason: '', rel_notes: '', done: false },
                 qaHost: { id: Date.now(), name: 'Test', scen: '', expect: '', res: false },
                 qaApp: { id: Date.now(), name: 'Test', scen: '', expect: '', res: false }
             };
+
+            // Auto-QA Creation
+            if (key === 'host') {
+                data['qaHost'].push({ id: Date.now() + 1, name: 'Neu (Auto)', scen: 'Funktionstest', expect: 'Dienst läuft', res: false });
+            }
+            if (key === 'docker') {
+                data['qaApp'].push({ id: Date.now() + 1, name: 'Neu (Auto)', scen: 'Funktionstest', expect: 'Container läuft', res: false });
+            }
+
             data[key].push(empty[key]);
             updateState();
         }
