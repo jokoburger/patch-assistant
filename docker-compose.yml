@@ -6,4 +6,7 @@ services:
     ports:
       - "8080:80"
     volumes:
-      - ./data:/app/data
+      - patch_data:/app/data
+
+volumes:
+  patch_data:

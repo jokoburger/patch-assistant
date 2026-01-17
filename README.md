@@ -41,5 +41,9 @@ Um die Daten vollständig zurückzusetzen, nutzen Sie den "Daten zurücksetzen"-
 *   **Icons**: Phosphor Icons
 *   **Charts**: Chart.js
 
+## 📂 Verzeichnisstruktur
+*   **Container Working Directory**: `/app`
+*   **Host Persistence**: `patch_data` (Docker Volume) linked to `/app/data`
+
 ## 📝 Lizenz
 Open Source / Interne Nutzung.
