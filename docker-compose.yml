@@ -1,0 +1,9 @@
+services:
+  patch-protocol:
+    build: .
+    container_name: patch-protocol
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./data:/app/data
