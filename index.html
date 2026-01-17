@@ -473,9 +473,24 @@
                 }
 
                 // Status Button
-                let isDone = key.startsWith('qa') ? item.res : item.done;
-                let btnLabel = key.startsWith('qa') ? (isDone ? "OK" : "Prüfen") : (isDone ? "Erledigt" : "Offen");
-                let btnColor = isDone ? "bg-green-500 text-white" : "bg-slate-200 text-slate-600";
+                let status = item.status || (item.done ? 'done' : 'pending');
+                // QA overrides
+                if (key.startsWith('qa')) {
+                    status = item.res ? 'done' : 'pending';
+                }
+
+                let btnLabel = "Offen";
+                let btnColor = "bg-slate-200 text-slate-600"; // pending
+
+                if (status === 'wip') {
+                    btnLabel = "In Arbeit";
+                    btnColor = "bg-yellow-400 text-yellow-900";
+                } else if (status === 'done') {
+                    btnLabel = key.startsWith('qa') ? "OK" : "Erledigt";
+                    btnColor = "bg-green-500 text-white";
+                } else {
+                    if (key.startsWith('qa')) btnLabel = "Prüfen";
+                }
 
                 html += `
                     <td class="p-3 text-center">
@@ -510,16 +525,32 @@
         }
 
         function toggleStatus(key, idx) {
-            data[key][idx].done = !data[key][idx].done;
-            if (key.startsWith('qa')) data[key][idx].res = data[key][idx].done;
+            // Cycle: pending -> wip -> done -> pending
+            const current = data[key][idx].status || (data[key][idx].done ? 'done' : 'pending');
+            let next = 'pending';
+            if (current === 'pending') next = 'wip';
+            else if (current === 'wip') next = 'done';
+
+            data[key][idx].status = next;
+            data[key][idx].done = (next === 'done'); // maintain backwards compatibility for now
+
+            // QA Special Case (Boolean only for now or 3 states? QA is usually Pass/Fail)
+            // Let's keep QA as boolean Pass/Fail for simplicity unless requested.
+            // But code uses same toggleStatus. Let's differentiate.
+            if (key.startsWith('qa')) {
+                // QA is boolean: Offen -> OK
+                data[key][idx].res = !data[key][idx].res;
+                // Sync status for consistency if we wanted
+            }
+
             updateState();
         }
 
         function addRow(key) {
             const empty = {
-                backup: { id: Date.now(), label: 'Neu', method: '', ref: '', done: false },
-                host: { id: Date.now(), name: 'Neu', old: '', new: '', reason: '', rel_notes: '', done: false },
-                docker: { id: Date.now(), name: 'Neu', old: '', new: '', reason: '', rel_notes: '', done: false },
+                backup: { id: Date.now(), label: 'Neu', method: '', ref: '', status: 'pending', done: false },
+                host: { id: Date.now(), name: 'Neu', old: '', new: '', reason: '', rel_notes: '', status: 'pending', done: false },
+                docker: { id: Date.now(), name: 'Neu', old: '', new: '', reason: '', rel_notes: '', status: 'pending', done: false },
                 qaHost: { id: Date.now(), name: 'Test', scen: '', expect: '', res: false },
                 qaApp: { id: Date.now(), name: 'Test', scen: '', expect: '', res: false }
             };
@@ -571,27 +602,48 @@
 
             // Calculate Metrics
             const totalTasks = data.backup.length + data.host.length + data.docker.length + data.qaHost.length + data.qaApp.length;
-            const completedTasks =
-                data.backup.filter(i => i.done).length +
-                data.host.filter(i => i.done).length +
-                data.docker.filter(i => i.done).length +
-                data.qaHost.filter(i => i.res).length +
-                data.qaApp.filter(i => i.res).length;
 
-            const pct = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
+            let completedTasks = 0;
+            let wipTasks = 0;
+
+            const check = (arr) => {
+                arr.forEach(i => {
+                    const s = i.status || (i.done ? 'done' : 'pending');
+                    if (s === 'done') completedTasks++;
+                    if (s === 'wip') wipTasks++;
+                });
+            };
+
+            check(data.backup);
+            check(data.host);
+            check(data.docker);
+            // QA
+            completedTasks += data.qaHost.filter(i => i.res).length;
+            completedTasks += data.qaApp.filter(i => i.res).length;
+
+            // For chart, consider WIP as partial or separate? 
+            // Doughnut: Done / WIP / Open
+
+            const pct = totalTasks === 0 ? 0 : Math.round(((completedTasks + (wipTasks * 0.5)) / totalTasks) * 100);
 
             // Update Chart
             if (progressChart) {
-                progressChart.data.datasets[0].data = [completedTasks, totalTasks - completedTasks];
+                progressChart.data.datasets[0].data = [completedTasks, wipTasks, totalTasks - completedTasks - wipTasks];
+                progressChart.data.datasets[0].backgroundColor = ['#22c55e', '#facc15', '#e2e8f0'];
+                progressChart.data.labels = ['Erledigt', 'In Arbeit', 'Offen'];
                 progressChart.update();
             }
             document.getElementById('progressText').innerText = `${pct}% Abgeschlossen`;
 
             // Update Distribution Chart in Report
             if (distributionChart) {
+                // Counts per category
+                const countDone = (arr) => arr.filter(i => (i.status === 'done' || i.done)).length;
+                const countWip = (arr) => arr.filter(i => i.status === 'wip').length;
+
                 distributionChart.data.datasets[0].data = [
-                    data.backup.filter(i => i.done).length,
-                    data.host.filter(i => i.done).length + data.docker.filter(i => i.done).length,
+                    countDone(data.backup),
+                    countDone(data.host) + countDone(data.docker),
                     data.qaHost.filter(i => i.res).length + data.qaApp.filter(i => i.res).length
                 ];
                 distributionChart.update();

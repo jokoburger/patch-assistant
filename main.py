@@ -27,24 +27,24 @@ init_db()
 DEFAULT_STATE = {
     "metadata": {"client": "", "date": "", "tech": "", "ticket": ""},
     "backup": [
-        {"id": "conf", "label": "Konfigurations-Backup", "method": "Export DSM (.dss)", "ref": "", "done": False},
-        {"id": "hyper", "label": "Disaster Recovery", "method": "Hyper Backup Prüfung", "ref": "Letzter Stand: Heute", "done": False},
-        {"id": "snap", "label": "Dateisystem-Snapshots", "method": "Btrfs-Snapshots (Docker)", "ref": "", "done": False},
-        {"id": "db", "label": "Datenbank-Sicherung", "method": "SQL-Dump (All)", "ref": "", "done": False}
+        {"id": "conf", "label": "Konfigurations-Backup", "method": "Export DSM (.dss)", "ref": "", "status": "pending"},
+        {"id": "hyper", "label": "Disaster Recovery", "method": "Hyper Backup Prüfung", "ref": "Letzter Stand: Heute", "status": "pending"},
+        {"id": "snap", "label": "Dateisystem-Snapshots", "method": "Btrfs-Snapshots (Docker)", "ref": "", "status": "pending"},
+        {"id": "db", "label": "Datenbank-Sicherung", "method": "SQL-Dump (All)", "ref": "", "status": "pending"}
     ],
     "host": [
-        {"id": "dsm", "name": "DSM OS (Host)", "old": "", "new": "", "reason": "Security Fix / Update", "rel_notes": "", "done": False},
-        {"id": "drive", "name": "Synology Drive", "old": "", "new": "", "reason": "Stabilität", "rel_notes": "", "done": False},
-        {"id": "hyperb", "name": "Hyper Backup", "old": "", "new": "", "reason": "Optimierung", "rel_notes": "", "done": False},
-        {"id": "active", "name": "Active Backup", "old": "", "new": "", "reason": "Kompatibilität", "rel_notes": "", "done": False},
-        {"id": "sec", "name": "Security Advisor", "old": "-", "new": "-", "reason": "System-Scan", "rel_notes": "", "done": False}
+        {"id": "dsm", "name": "DSM OS (Host)", "old": "", "new": "", "reason": "Security Fix / Update", "rel_notes": "", "status": "pending"},
+        {"id": "drive", "name": "Synology Drive", "old": "", "new": "", "reason": "Stabilität", "rel_notes": "", "status": "pending"},
+        {"id": "hyperb", "name": "Hyper Backup", "old": "", "new": "", "reason": "Optimierung", "rel_notes": "", "status": "pending"},
+        {"id": "active", "name": "Active Backup", "old": "", "new": "", "reason": "Kompatibilität", "rel_notes": "", "status": "pending"},
+        {"id": "sec", "name": "Security Advisor", "old": "-", "new": "-", "reason": "System-Scan", "rel_notes": "", "status": "pending"}
     ],
     "docker": [
-        {"id": "nc", "name": "Nextcloud", "old": "", "new": "", "reason": "PHP-Stack Update", "rel_notes": "", "done": False},
-        {"id": "auth", "name": "Authentik", "old": "", "new": "", "reason": "Blueprint Updates", "rel_notes": "", "done": False},
-        {"id": "vault", "name": "Vaultwarden", "old": "", "new": "", "reason": "Web-Vault Check", "rel_notes": "", "done": False},
-        {"id": "n8n", "name": "n8n", "old": "", "new": "", "reason": "NodeJS Version", "rel_notes": "", "done": False},
-        {"id": "pg", "name": "PostgreSQL", "old": "", "new": "", "reason": "Persistenz Check", "rel_notes": "", "done": False}
+        {"id": "nc", "name": "Nextcloud", "old": "", "new": "", "reason": "PHP-Stack Update", "rel_notes": "", "status": "pending"},
+        {"id": "auth", "name": "Authentik", "old": "", "new": "", "reason": "Blueprint Updates", "rel_notes": "", "status": "pending"},
+        {"id": "vault", "name": "Vaultwarden", "old": "", "new": "", "reason": "Web-Vault Check", "rel_notes": "", "status": "pending"},
+        {"id": "n8n", "name": "n8n", "old": "", "new": "", "reason": "NodeJS Version", "rel_notes": "", "status": "pending"},
+        {"id": "pg", "name": "PostgreSQL", "old": "", "new": "", "reason": "Persistenz Check", "rel_notes": "", "status": "pending"}
     ],
     "qaHost": [
         {"id": "q_dsm", "name": "DSM Dashboard", "scen": "Ressourcen & Logs", "expect": "Stabil, keine Fehler", "res": False},
@@ -95,8 +95,11 @@ def reset_state(db: Session = Depends(get_db)):
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Drawing
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.charts.piecharts import Pie
+from reportlab.graphics.charts.barcharts import VerticalBarChart
 from io import BytesIO
 
 @app.get("/api/report/pdf")
@@ -132,12 +135,55 @@ def generate_pdf(db: Session = Depends(get_db)):
     elements.append(t_meta)
     elements.append(Spacer(1, 24))
 
+    # --- Charts ---
+    # Progress Chart
+    completed = 0
+    in_progress = 0
+    total = 0
+    
+    # Helper to count status
+    def check_status(item):
+        s = item.get('status', 'pending')
+        # Compatibility with old boolean done
+        if item.get('done') is True: s = 'done'
+        return s
+
+    for cat in ['backup', 'host', 'docker']:
+        for item in data[cat]:
+            s = check_status(item)
+            if s == 'done': completed += 1
+            elif s == 'wip': in_progress += 1
+            total += 1
+    
+    # QA
+    for cat in ['qaHost', 'qaApp']:
+        for item in data[cat]:
+            if item.get('res'): completed += 1
+            total += 1
+
+    remaining = total - completed - in_progress
+    
+    # Draw Pie
+    d = Drawing(400, 150)
+    pc = Pie()
+    pc.x = 100
+    pc.y = 25
+    pc.data = [completed, in_progress, remaining]
+    pc.labels = [f'Done ({completed})', f'WIP ({in_progress})', f'Open ({remaining})']
+    pc.slices[0].fillColor = colors.limegreen
+    pc.slices[1].fillColor = colors.yellow
+    pc.slices[2].fillColor = colors.lightgrey
+    d.add(pc)
+    elements.append(d)
+    elements.append(Spacer(1, 12))
+
     # --- 1. Backup ---
     elements.append(Paragraph("1. Quality Assurance: Backup", h2_style))
     backup_data = [["Status", "Checkpoint", "Methode", "Bemerkung"]]
     for item in data['backup']:
-        status = "OK" if item.get('done') else "OFFEN"
-        backup_data.append([status, item.get('label',''), item.get('method',''), item.get('ref','')])
+        s = check_status(item)
+        status_text = "OK" if s == 'done' else ("WIP" if s == 'wip' else "OFFEN")
+        backup_data.append([status_text, item.get('label',''), item.get('method',''), item.get('ref','')])
     
     t_backup = Table(backup_data, colWidths=[50, 150, 150, 100])
     t_backup.setStyle(TableStyle([
@@ -153,12 +199,14 @@ def generate_pdf(db: Session = Depends(get_db)):
     update_data = [["Status", "Komponente", "Alt", "Neu", "Grund", "Ref"]]
     
     for item in data['host']:
-         status = "OK" if item.get('done') else "OFFEN"
-         update_data.append([status, item.get('name',''), item.get('old',''), item.get('new',''), item.get('reason',''), item.get('rel_notes','')])
+         s = check_status(item)
+         status_text = "OK" if s == 'done' else ("WIP" if s == 'wip' else "OFFEN")
+         update_data.append([status_text, item.get('name',''), item.get('old',''), item.get('new',''), item.get('reason',''), item.get('rel_notes','')])
          
     for item in data['docker']:
-         status = "OK" if item.get('done') else "OFFEN"
-         update_data.append([status, item.get('name',''), item.get('old',''), item.get('new',''), item.get('reason',''), item.get('rel_notes','')])
+         s = check_status(item)
+         status_text = "OK" if s == 'done' else ("WIP" if s == 'wip' else "OFFEN")
+         update_data.append([status_text, item.get('name',''), item.get('old',''), item.get('new',''), item.get('reason',''), item.get('rel_notes','')])
 
     t_updates = Table(update_data, colWidths=[40, 100, 60, 60, 100, 90])
     t_updates.setStyle(TableStyle([
